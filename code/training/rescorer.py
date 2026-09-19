@@ -182,3 +182,9 @@ def training_set_multi(regions, variant, every=3, site_norm=False, exclude_calls
         Xs.append(x - means[name] if site_norm else x)
         Ms.append(mask)
     return np.concatenate(Xs), np.concatenate(Ms), means
+
+
+def gate(S, tlogit, g):
+    """Gated rescorer: keep a head score only where the original model's probability for the same
+    class exceeds g (the head re-ranks candidates; it cannot create detections from nothing)."""
+    return S * (1 / (1 + np.exp(-tlogit)) > g)

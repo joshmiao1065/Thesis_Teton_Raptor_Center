@@ -22,4 +22,8 @@ def __getattr__(name):  # lazy, so importing this module never needs the data to
     keys = {"MURIE_AUDIO": "murie_audio", "KALEIDOSCOPE": "kaleidoscope", "SYNTHETIC": "synthetic_audio"}
     if name in keys:
         return _get(keys[name])
+    if name == "REGION_AUDIO":  # {region name: directory}, relative paths in the config
+        if "region_audio" not in _cfg:
+            raise FileNotFoundError(f"set 'region_audio' (name -> path relative to THESIS_ROOT) in {_cfg_file}")
+        return {k: ROOT / v for k, v in _cfg["region_audio"].items()}
     raise AttributeError(name)

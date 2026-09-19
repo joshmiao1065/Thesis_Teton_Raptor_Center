@@ -18,6 +18,7 @@ def spectrogram_panel(ax, path, start, dur, title="", pad=2, fmax=4000):
     sr = sf.info(path).samplerate
     a = max(start - pad, 0)
     y, _ = sf.read(path, start=int(a * sr), frames=int((dur + 2 * pad) * sr), dtype="float32")
+    y = y if y.ndim == 1 else y[:, 0]
     fr, t, S = spectrogram(y, sr, nperseg=512, noverlap=384)
     S = 10 * np.log10(S + 1e-12)
     ax.imshow(S, origin="lower", aspect="auto", extent=[t[0], t[-1], fr[0], fr[-1]],

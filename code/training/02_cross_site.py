@@ -23,6 +23,8 @@
 # * `site-norm`: the same, but every site's embeddings are centred on that site's own mean
 #   (needs only unlabeled audio from the new site).
 # * `murie-only`: the Murie-only head from notebook 01 (the failing case).
+# * `multi-mix`: as above, and the synthetic call mixtures are also built on the other sites'
+#   backgrounds (the held-out site's background is never used).
 #
 # Thresholds always come from held-out Murie days (2 flagged windows / hour), so a head that flags
 # far more than 2/h elsewhere is not transferring its operating point. There are almost no labels
@@ -72,7 +74,8 @@ for s in SITES:
     base_neg = scores("prob", murie, None)[np.isin(murie["day"], DAYS["test"])]
     for k, code in enumerate(CODES):
         rows.append(dict(site=s, species=code, method="baseline prob", flagged_per_h=flags(base_neg, base)[k]))
-    for name, tag in (("murie-only", "v2"), ("raw (LOSO)", f"loso_{s}_raw"), ("site-norm (LOSO)", f"loso_{s}")):
+    for name, tag in (("murie-only", "v2"), ("raw (LOSO)", f"loso_{s}_raw"), ("site-norm (LOSO)", f"loso_{s}"),
+                      ("multi-mix raw (LOSO)", f"m_loso_{s}_raw"), ("multi-mix site-norm (LOSO)", f"m_loso_{s}")):
         if not (INTERMEDIATE / "rescorer" / tag / f"{KIND}.pt").exists():
             continue
         f = flags(murie_negatives(tag, KIND), head_scores(tag, KIND, s))
@@ -101,7 +104,9 @@ if "taylor" in SITES:
     lvls = np.geomspace(0.25, 100, 14)
     fig, ax = plt.subplots(figsize=(6.5, 4))
     variants = [("baseline prob", None, "k", "-"), ("murie-only", "v2", "tab:red", "--"),
-                ("raw (LOSO)", "loso_taylor_raw", "tab:orange", "-"), ("site-norm (LOSO)", "loso_taylor", "tab:blue", "-")]
+                ("raw (LOSO)", "loso_taylor_raw", "tab:orange", "-"), ("site-norm (LOSO)", "loso_taylor", "tab:blue", "-"),
+                ("multi-mix raw (LOSO)", "m_loso_taylor_raw", "tab:green", "-"),
+                ("multi-mix site-norm (LOSO)", "m_loso_taylor", "tab:purple", "-")]
     for name, tag, c, ls in variants:
         if tag is None:
             S, neg = scores("prob", sites["taylor"], None), scores("prob", murie, None)[np.isin(murie["day"], DAYS["test"])]
