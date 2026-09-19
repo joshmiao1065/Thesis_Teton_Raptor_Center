@@ -1,88 +1,80 @@
+# ---
+# jupyter:
+#   jupytext:
+#     cell_metadata_filter: -all
+#     text_representation:
+#       extension: .py
+#       format_name: percent
+#       format_version: '1.3'
+#       jupytext_version: 1.19.5
+#   kernelspec:
+#     display_name: Python (thesis)
+#     language: python
+#     name: thesis
+# ---
+
 # %% [markdown]
-# # 02 Does the 8 kHz band limit change ConvNeXT's scores? (H4, controlled test)
-# Synthetic clips (60 s, 32 kHz, known species, forest or Gaussian background at several SNRs)
-# are scored twice with the same 5 s / 1 s windowing: as generated (full band) and after a
-# 32 -> 8 -> 32 kHz round trip that mimics the field files. Noise-only clips give the
-# false-positive side.
+# # 02 Does the 8 kHz band limit change ConvNeXT's scores? (controlled test)
+#
+# The field files are 8 kHz, but the model was trained on full-band audio. If the missing
+# 4-16 kHz content mattered, the same synthetic clip should score differently before and after
+# band limiting. Synthetic clips (60 s, known species, forest or Gaussian background at several
+# SNRs) were scored as generated ("full") and after a 32 -> 8 -> 32 kHz round trip ("8khz"),
+# with `evaluation/score_bandlimit.py`. Noise-only clips give the false-positive side.
 
 # %%
-import re
-
-import numpy as np
+import matplotlib.pyplot as plt
 import pandas as pd
-import torch
 
-from data_processing.audio import WINDOW, STEP, gpu_resample, read_wav
-from models.convnext import TARGETS, Preprocessor, load_model, target_ids
+from data_processing.paths import RESULTS
 
-from data_processing.paths import RESULTS, SYNTHETIC as SYN
-
-OUT = RESULTS / "bandlimit"; OUT.mkdir(parents=True, exist_ok=True)
-FOLDER2CODE = {"01-agos-american-northern-goshawk": "norgos", "02-ggow-great-gray-owl": "grgowl",
-               "03-flow-flammulated-owl": "flaowl", "04-boow-boreal-owl": "borowl",
-               "05-baow-bdow-barred-owl": "brdowl"}
-CODES = list(TARGETS)  # column order of target_p
-
-model, prep = load_model(), Preprocessor().cuda()
-tids = target_ids(model)
-id2label = model.config.id2label
-
-
-@torch.no_grad()
-def score(y32, batch=32):
-    w = y32.unfold(0, WINDOW, STEP)
-    tp, top1, top1p = [], [], []
-    for i in range(0, len(w), batch):
-        p = torch.sigmoid(model(prep(w[i:i + batch])).logits)
-        v, ix = p.max(1)
-        tp.append(p[:, tids].cpu()); top1.append(ix.cpu()); top1p.append(v.cpu())
-    return torch.cat(tp).numpy(), torch.cat(top1).numpy(), torch.cat(top1p).numpy()
-
-
-def band_limit(y32):
-    return gpu_resample(gpu_resample(y32, 32000, 8000), 8000, 32000)
-
-
-# %%
-clips = []
-for folder, code in FOLDER2CODE.items():
-    for f in sorted((SYN / folder / "generated").glob("*.wav")):
-        m = re.search(r"_generated_(forest|gaussian_noise)_1min_snr(-?\d+)", f.name)
-        clips.append(dict(path=f, species=code, bg=m.group(1), snr=int(m.group(2)), src=f.name.split("_generated")[0]))
-for f in (SYN / "base").glob("*.wav"):
-    clips.append(dict(path=f, species="none", bg=f.stem.split("_1min")[0], snr=None, src=f.stem))
-print(len(clips), "clips")
-
-rows, per_window = [], []
-for k, c in enumerate(clips):
-    y, sr = read_wav(c["path"])
-    y = gpu_resample(y, sr, 32000) if sr != 32000 else y.cuda()
-    for cond, yy in (("full", y), ("8khz", band_limit(y))):
-        tp, t1, t1p = score(yy)
-        lab = np.array([id2label[i] for i in t1])
-        det = np.isin(lab, CODES) & (t1p > 0.1)
-        true_col = CODES.index(c["species"]) if c["species"] in CODES else None
-        rows.append(dict(**{k_: v for k_, v in c.items() if k_ != "path"}, cond=cond,
-                         max_true=(tp[:, true_col].max() if true_col is not None else np.nan),
-                         det_true=(bool((det & (lab == c["species"])).any()) if true_col is not None else False),
-                         det_other=int((det & (lab != c["species"])).sum()),
-                         det_any_windows=int(det.sum()), n_windows=len(det),
-                         top1_nontarget_frac=float((~np.isin(lab, CODES)).mean()),
-                         **{f"max_{cd}": tp[:, i].max() for i, cd in enumerate(CODES)}))
-    if k % 50 == 0:
-        print(k, flush=True)
-df = pd.DataFrame(rows)
-df.to_csv(OUT / "clip_scores.csv", index=False)
-
-# %%
+plt.rcParams.update({"figure.dpi": 100, "axes.grid": True, "grid.alpha": 0.3})
+df = pd.read_csv(RESULTS / "bandlimit" / "clip_scores.csv")
 sp = df[df.species != "none"]
-print("clip-level detection of the true species by baseline rule (top-1 target, p>0.1):")
-print(sp.groupby(["cond", "species"]).det_true.mean().unstack(0).round(3))
-print("\nmean max probability of the true species:")
-print(sp.groupby(["cond", "species"]).max_true.mean().unstack(0).round(3))
-print("\nby SNR (all species):")
-print(sp.groupby(["cond", "snr"]).det_true.mean().unstack(0).round(3))
-print("\nwrong-target detections (windows per clip):")
-print(sp.groupby(["cond", "species"]).det_other.mean().unstack(0).round(2))
-print("\nnoise-only clips:")
-print(df[df.species == "none"].groupby(["src", "cond"])[["det_any_windows", "n_windows", "top1_nontarget_frac"]].mean())
+print(len(sp), "synthetic clips with a target species;", (df.species == "none").sum() // 2, "noise-only clips")
+
+# %% [markdown]
+# ## Detection of the true species, clip level
+# A clip counts as detected when some window has the true species as top-1 with p > 0.1.
+
+# %%
+fig, ax = plt.subplots(1, 2, figsize=(12, 3.8))
+d = sp.groupby(["species", "cond"]).det_true.mean().unstack()
+d.plot.bar(ax=ax[0], color=["tab:orange", "tab:blue"]); ax[0].set_ylabel("share of clips detected"); ax[0].set_title("By species")
+s = sp.groupby(["snr", "cond"]).det_true.mean().unstack()
+for c, col in zip(s.columns, ["tab:orange", "tab:blue"]):
+    ax[1].plot(s.index, s[c], marker="o", label=c, color=col)
+ax[1].set_xlabel("SNR (dB)"); ax[1].set_ylabel("share of clips detected"); ax[1].legend(); ax[1].set_title("By SNR")
+plt.tight_layout()
+plt.show()
+
+# %% [markdown]
+# ## Score of the true species
+
+# %%
+piv = sp.pivot_table(index=["src", "bg", "snr", "species"], columns="cond", values="max_true").reset_index()
+fig, ax = plt.subplots(figsize=(4.8, 4.5))
+ax.scatter(piv["full"], piv["8khz"], s=6, alpha=0.5)
+ax.plot([0, 1], [0, 1], "r--")
+ax.set_xlabel("max probability, full band"); ax.set_ylabel("max probability, 8 kHz round trip")
+ax.set_title("Same clip, two conditions")
+plt.tight_layout()
+plt.show()
+print("mean absolute change in max probability:", (piv["8khz"] - piv["full"]).abs().mean().round(3))
+print("mean change:", (piv["8khz"] - piv["full"]).mean().round(3))
+
+# %% [markdown]
+# ## False alarms
+# Windows where a wrong target species was reported, and detections on the noise-only clips.
+
+# %%
+print("wrong-target detections per clip:")
+print(sp.groupby(["cond", "species"]).det_other.mean().unstack(0).round(3))
+print("\nnoise-only clips (windows flagged out of 56):")
+print(df[df.species == "none"].groupby(["src", "cond"])[["det_any_windows", "n_windows"]].mean())
+
+# %% [markdown]
+# ## Reading the figures
+# The two conditions are nearly identical: the band limit does not create false positives and does
+# not explain the field results. False alarms on this synthetic background are zero, so the field
+# false alarms come from real field sounds that the synthetic backgrounds do not contain.
