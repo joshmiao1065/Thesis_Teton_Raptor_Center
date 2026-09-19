@@ -1,0 +1,3 @@
+# Every notebook here is paired with a percent-format .py (edit the .py; sync with `jupytext --sync <file>`).
+formats = "ipynb,py:percent"
+cell_metadata_filter = "-all"
