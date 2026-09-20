@@ -32,7 +32,7 @@ def load_labels(folder, labeler=None):
         row = dict(id=iid, labeler=who, site=it["site"], stratum=it["stratum"], pop=it["pop"], tier=it["tier"],
                    dup_of=it.get("dup_of"), hour=it["hidden"]["hour"], species="|".join(sorted(r["species"])),
                    none=r["none"], unsure=r["unsure"], certainty=r.get("certainty"), tags="|".join(r["tags"]),
-                   edge=r["edge"], discuss=r["discuss"], notes=r["notes"], ms=r["ms"])
+                   edge=r["edge"], discuss=r["discuss"], notes=r["notes"], ms=r["ms"], scores_seen=bool(r.get("scores_seen")))
         for k, code in enumerate(CODES):
             row[f"cx_{code}"] = it["hidden"]["cx_p"][k]
             row[f"bn_{code}"] = it["hidden"]["bn_p"][k]
@@ -43,7 +43,7 @@ def load_labels(folder, labeler=None):
     if df.empty:
         return df
     seen = folder / "unblinded.txt"  # items whose model scores the annotator looked at before labeling
-    df["unblinded"] = df.id.isin(set(seen.read_text().split()) if seen.exists() else set())
+    df["unblinded"] = df.scores_seen | df.id.isin(set(seen.read_text().split()) if seen.exists() else set())
     main = df[df.dup_of.isna()]
     n = main.groupby(["labeler", "stratum"]).id.transform("size")
     df["weight"] = (main["pop"] / n).reindex(df.index)

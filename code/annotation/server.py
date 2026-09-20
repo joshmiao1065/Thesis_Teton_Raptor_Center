@@ -32,14 +32,16 @@ class State:
     def __init__(self, folder):
         self.dir = Path(folder)
         m = json.loads((self.dir / "manifest.json").read_text())
-        self.items = {it["id"]: it for grp in ("queue", "reference", "practice") for it in m[grp]}
-        self.groups = {g: [self.public(it) for it in m[g]] for g in ("queue", "reference", "practice")}
+        self.items = {it["id"]: it for grp in ("queue", "reference", "practice", "examples") for it in m.get(grp, [])}
+        self.groups = {g: [self.public(it) for it in m.get(g, [])] for g in ("queue", "reference", "practice", "examples")}
         key = self.dir / ".key"
         if not key.exists():
             key.write_text(secrets.token_urlsafe(12))
             key.chmod(0o600)
         self.key = key.read_text().strip()
         self.labels_path = self.dir / "labels.jsonl"
+        sp = self.dir / "scores.json"
+        self.scores = json.loads(sp.read_text()) if sp.exists() else {}
 
     @staticmethod
     def public(it):
@@ -116,6 +118,8 @@ def make_handler(state):
                 return self._send(200, json.dumps(state.groups))
             if path == "/api/labels":
                 return self._send(200, json.dumps(state.read_labels((q.get("labeler") or [None])[0])))
+            if path.startswith("/api/scores/"):
+                return self._send(200, json.dumps(state.scores.get(path.rsplit("/", 1)[1], {"cx": [], "bn": [], "none": True})))
             if path.startswith("/api/clip/"):
                 item_id = path.rsplit("/", 1)[1].removesuffix(".wav")
                 if item_id not in state.items:

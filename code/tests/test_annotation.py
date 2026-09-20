@@ -48,7 +48,8 @@ def make_dir(tmp_path):
     (tmp_path / "reference").mkdir()
     sf.write(tmp_path / "reference" / "x.wav", np.zeros(8000, np.float32), 8000, subtype="PCM_16")
     it = dict(item(1, "cx_test"), wav="reference/x.wav", title="t")
-    (tmp_path / "manifest.json").write_text(json.dumps(dict(queue=[it], reference=[], practice=[])))
+    (tmp_path / "manifest.json").write_text(json.dumps(dict(queue=[it], reference=[], practice=[], examples=[dict(it, id="e1", kind="example")])))
+    (tmp_path / "scores.json").write_text(json.dumps({"m1": {"cx": [{"t": 1.0, "logits": {}, "top": []}], "bn": []}}))
     return tmp_path
 
 
@@ -65,10 +66,13 @@ def test_server_hides_scores_requires_key_serves_clips_and_stores_labels(tmp_pat
             assert e.code == 403
         man = json.load(urllib.request.urlopen(f"{base}/api/manifest?k={st.key}"))
         assert set(man["queue"][0]) <= {"id", "kind", "clip", "focal", "truth", "title", "species", "tier"}
+        assert len(man["examples"]) == 1
+        sc = json.load(urllib.request.urlopen(f"{base}/api/scores/m1?k={st.key}"))
+        assert sc["cx"][0]["t"] == 1.0 and json.load(urllib.request.urlopen(f"{base}/api/scores/zzz?k={st.key}"))["none"]
         wav = urllib.request.urlopen(f"{base}/api/clip/m1.wav?k={st.key}").read()
         assert wav[:4] == b"RIFF"
         rec = dict(id="m1", labeler="a", species=["brdowl"], certainty="sure", none=False, unsure=False, tags=[], edge=False,
-                   discuss=False, notes="", ms=1200, plays=1)
+                   discuss=False, notes="", ms=1200, plays=1, scores_seen=True)
         req = urllib.request.Request(f"{base}/api/label?k={st.key}", json.dumps(rec).encode(), {"Content-Type": "application/json"})
         assert json.load(urllib.request.urlopen(req))["ok"]
         got = json.load(urllib.request.urlopen(f"{base}/api/labels?k={st.key}&labeler=a"))
@@ -76,5 +80,5 @@ def test_server_hides_scores_requires_key_serves_clips_and_stores_labels(tmp_pat
     finally:
         srv.shutdown()
     df = load_labels(tmp_path)
-    assert list(df.is_brdowl) == [True] and df.weight.iloc[0] == 100 and not df.unblinded.any()
+    assert list(df.is_brdowl) == [True] and df.weight.iloc[0] == 100 and df.unblinded.all() and df.scores_seen.all()
     assert weighted_rate(df, "is_brdowl", "stratum").iloc[0] == 1.0
