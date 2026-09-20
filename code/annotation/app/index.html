@@ -214,6 +214,11 @@ function play(a, b) {
 const playAll = () => play(0, S.wav ? S.wav.x.length / S.wav.sr : 0);
 const playFocal = () => S.item && play(S.item.focal[0], S.item.focal[1]);
 
+/* ---------- downloads ---------- */
+function saveBlob(blob, name) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
+function downloadClip() { if (!S.ab || !S.item) return toast("The clip is still loading."); saveBlob(new Blob([S.ab], {type:"audio/wav"}), S.item.id + ".wav"); toast("Saved " + S.item.id + ".wav", 1500); }
+function downloadPng() { const cv = $("#spec"); if (!cv || !S.base) return toast("The spectrogram is still loading."); cv.toBlob(b => saveBlob(b, S.item.id + ".png")); }
+
 /* ---------- item loading and labels ---------- */
 const list = () => S.groups[S.mode === "label" ? "queue" : S.mode];
 const key = () => S.mode === "label" ? "queue" : S.mode;
@@ -224,11 +229,11 @@ function fromRecord(r) { return {species:new Set(r.species || []), certainty:r.c
 async function loadItem(i) {
   stop(); const L = list(); if (!L.length) return;
   i = Math.max(0, Math.min(L.length - 1, i)); S.pos[key()] = i; store.set("pos_" + key() + "_" + labeler, i);
-  const it = L[i]; S.item = it; S.revealed = false; S.wav = S.spec = S.base = null; S.plays = 0;
+  const it = L[i]; S.item = it; S.revealed = false; S.ab = S.wav = S.spec = S.base = null; S.plays = 0;
   S.L = S.labels[it.id] ? fromRecord(S.labels[it.id]) : blankL();
   renderCenter(); paint();
   try { const ab = await (await api("clip/" + it.id + ".wav")).arrayBuffer(); if (S.item !== it) return;
-    S.wav = parseWav(ab); S.spec = stft(S.wav.x, S.wav.sr); drawSpec(); S.t0 = performance.now(); if (S.autoplay) playFocal(); }
+    S.ab = ab; S.wav = parseWav(ab); S.spec = stft(S.wav.x, S.wav.sr); drawSpec(); S.t0 = performance.now(); if (S.autoplay) playFocal(); }
   catch (e) { status("could not load audio: " + e.message, true); }
   renderSide();
 }
@@ -296,6 +301,8 @@ function ctlButtons() {
     <button class="btn primary" id="bplay">Play clip <small>Space</small></button>
     <button class="btn" id="bfocal">Play shaded part <small>A</small></button>
     <button class="btn" id="bstop">Stop</button>
+    <button class="btn" id="bdl" title="save this clip as a wav file">Download clip <small>X</small></button>
+    <button class="btn" id="bpng" title="save the spectrogram as a png">Spectrogram PNG</button>
     <label class="mute">speed <select id="rate"><option>0.5</option><option>0.75</option><option selected>1</option><option>1.5</option><option>2</option></select></label>
     <label class="mute">gain <input type="range" id="gain" min="0" max="30" value="${S.gainDb}" style="width:90px"> <span id="gainv">${S.gainDb} dB</span></label>
     <label class="mute"><input type="checkbox" id="loop" ${S.loop ? "checked" : ""}> repeat <small>R</small></label>
@@ -326,6 +333,7 @@ function renderCenter() {
   cv.onclick = (e) => { const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) / r.width * W; if (!S.spec) return;
     const t = (x - M.l) / (W - M.l - M.r) * S.spec.dur; play(Math.max(0, t), S.spec.dur); };
   $("#bplay").onclick = () => S.playhead === null ? playAll() : stop(); $("#bfocal").onclick = playFocal; $("#bstop").onclick = stop;
+  $("#bdl").onclick = downloadClip; $("#bpng").onclick = downloadPng;
   $("#rate").value = String(S.rate); $("#rate").onchange = (e) => { S.rate = +e.target.value; if (src) src.playbackRate.value = S.rate; };
   $("#gain").oninput = (e) => { S.gainDb = +e.target.value; $("#gainv").textContent = S.gainDb + " dB"; setGain(); };
   $("#loop").onchange = (e) => S.loop = e.target.checked; $("#auto").onchange = (e) => { S.autoplay = e.target.checked; store.set("autoplay", S.autoplay); };
@@ -388,6 +396,7 @@ function guide() {
    <tr><td><span class="kbd">E</span> / <span class="kbd">D</span> / <span class="kbd">/</span></td><td>call partly outside / flag for discussion / notes</td></tr>
    <tr><td><span class="kbd">Space</span> / <span class="kbd">A</span> / <span class="kbd">R</span> / <span class="kbd">S</span></td><td>play or stop the clip / play the shaded part / repeat / cycle speed</td></tr>
    <tr><td><span class="kbd">Enter</span> / <span class="kbd">Backspace</span></td><td>save and next / back</td></tr>
+   <tr><td><span class="kbd">X</span></td><td>download the current clip (wav); the Spectrogram PNG button saves the picture</td></tr>
    <tr><td>click the spectrogram</td><td>play from that point</td></tr></table>
   <p class="mute">Labels are saved to the server as you go (see the status at the top right). You can close the tab and continue later.</p></section>`);
 }
@@ -425,6 +434,7 @@ document.addEventListener("keydown", (e) => {
   if (S.mode === "guide" || S.mode === "progress") return;
   if (k === " ") { e.preventDefault(); S.playhead === null ? playAll() : stop(); return; }
   if (k === "a") return playFocal();
+  if (k === "x") return downloadClip();
   if (k === "r") { S.loop = !S.loop; const c = $("#loop"); if (c) c.checked = S.loop; return; }
   if (k === "s") { const r = [0.5, 0.75, 1, 1.5, 2]; S.rate = r[(r.indexOf(S.rate) + 1) % r.length]; $("#rate").value = String(S.rate); if (src) src.playbackRate.value = S.rate; toast("speed " + S.rate + "x", 900); return; }
   if (S.mode === "reference") { if (k === "arrowdown" || k === "arrowright") loadItem(S.pos.reference + 1); if (k === "arrowup" || k === "arrowleft") loadItem(S.pos.reference - 1); return; }
