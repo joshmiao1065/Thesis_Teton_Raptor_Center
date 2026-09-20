@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Owl annotation</title>
+<style>
+  :root { --bg:#14161a; --panel:#1d2026; --panel2:#262a32; --line:#343943; --text:#e6e8ec; --mute:#9aa1ad;
+          --accent:#5aa9ff; --good:#4cc38a; --warn:#f0b64a; --bad:#ef6b6b; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 system-ui, sans-serif; }
+  header { display:flex; gap:12px; align-items:center; padding:8px 16px; background:var(--panel); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header h1 { font-size:15px; margin:0 8px 0 0; }
+  .tabs button { background:none; border:0; color:var(--mute); padding:6px 12px; cursor:pointer; font:inherit; border-radius:6px; }
+  .tabs button.on { background:var(--panel2); color:var(--text); }
+  .grow { flex:1; }
+  input[type=text], select, textarea { background:var(--panel2); border:1px solid var(--line); color:var(--text); border-radius:6px; padding:5px 8px; font:inherit; }
+  #status { font-size:12px; color:var(--mute); }
+  #status.bad { color:var(--bad); }
+  main { display:grid; grid-template-columns: 250px 1fr; gap:14px; padding:14px 16px; max-width:1500px; margin:0 auto; }
+  main.wide { grid-template-columns: 1fr; }
+  aside, section.card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px; }
+  aside h3 { margin:8px 0 4px; font-size:13px; color:var(--mute); text-transform:uppercase; letter-spacing:.04em; }
+  aside button.item { display:block; width:100%; text-align:left; background:none; border:0; color:var(--text); padding:5px 6px; border-radius:6px; cursor:pointer; font:inherit; font-size:13px; }
+  aside button.item:hover { background:var(--panel2); }
+  aside button.item.on { background:var(--panel2); outline:1px solid var(--accent); }
+  aside button.item.done::before { content:"\2713 "; color:var(--good); }
+  canvas { width:100%; display:block; border-radius:6px; background:#000; cursor:crosshair; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:8px 0; }
+  .btn { background:var(--panel2); border:1px solid var(--line); color:var(--text); padding:6px 12px; border-radius:7px; cursor:pointer; font:inherit; }
+  .btn:hover { border-color:var(--accent); }
+  .btn.primary { background:var(--accent); color:#06121f; border-color:var(--accent); font-weight:600; }
+  .btn.on { background:var(--accent); color:#06121f; border-color:var(--accent); }
+  .btn.sp.on { background:var(--good); border-color:var(--good); }
+  .btn.none.on { background:var(--mute); border-color:var(--mute); }
+  .btn.unsure.on { background:var(--warn); border-color:var(--warn); }
+  .btn small { opacity:.7; margin-left:4px; }
+  .mute { color:var(--mute); }
+  .kbd { background:var(--panel2); border:1px solid var(--line); border-radius:4px; padding:0 5px; font-family:ui-monospace,monospace; font-size:12px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  #toast { position:fixed; bottom:16px; right:16px; background:var(--panel2); border:1px solid var(--line); padding:10px 14px; border-radius:8px; display:none; max-width:340px; }
+  .reveal { border:1px solid var(--line); border-radius:8px; padding:8px 12px; margin:8px 0; }
+  .reveal.ok { border-color:var(--good); } .reveal.no { border-color:var(--bad); }
+  table { border-collapse:collapse; } td, th { padding:3px 10px; border-bottom:1px solid var(--line); text-align:left; }
+  h2 { margin:.2em 0 .5em; font-size:17px; } h4 { margin:.9em 0 .2em; }
+  .bar { height:8px; background:var(--panel2); border-radius:4px; overflow:hidden; } .bar > div { height:100%; background:var(--accent); }
+  details { margin:6px 0; } summary { cursor:pointer; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Owl annotation</h1>
+  <div class="tabs" id="tabs"></div>
+  <span class="grow"></span>
+  <label class="mute">Labeler <input type="text" id="labeler" size="10"></label>
+  <span id="status">loading&hellip;</span>
+</header>
+<main id="main">
+  <aside id="side"></aside>
+  <div id="center"></div>
+</main>
+<div id="toast"></div>
+
+<script>
+"use strict";
+const SPECIES = [
+  {k:"1", code:"brdowl", name:"Barred owl"}, {k:"2", code:"borowl", name:"Boreal owl"},
+  {k:"3", code:"grgowl", name:"Great gray owl"}, {k:"4", code:"flaowl", name:"Flammulated owl"},
+  {k:"5", code:"norgos", name:"Northern goshawk"}];
+const NAME = Object.fromEntries(SPECIES.map(s => [s.code, s.name]));
+const TAGS = [
+  {k:"f", code:"frog_insect", name:"frog / insect chorus"}, {k:"w", code:"wind_rain", name:"wind / rain"},
+  {k:"b", code:"other_bird", name:"other bird"}, {k:"o", code:"other_owl_animal", name:"other owl / mammal"},
+  {k:"h", code:"human_machine", name:"human / machine"}, {k:"t", code:"steady_tone", name:"steady tone / hum"},
+  {k:"q", code:"very_quiet", name:"very quiet"}];
+const DESC = {
+  brdowl:"1-2 s hoot phrases (\"who cooks for you\"), 400-700 Hz with harmonics, often in runs; also cackles and caterwauling. Mostly at night.",
+  grgowl:"Very deep, faint series of about 6-12 evenly spaced \"hoo\" notes, roughly 200-400 Hz. Easily masked by wind and low rumble.",
+  flaowl:"A single soft, low hoot (about 400-600 Hz) repeated every 2-3 s for minutes, sometimes as a two-note pair.",
+  borowl:"A rapid, evenly spaced series of hollow whistles (\"poo-poo-poo...\", 10-25 notes over 2-3 s), about 0.5-1.5 kHz. Whether boreal owls occur at Murie in April is unknown: be conservative. Note: the benchmark recordings used as reference below look like brief broadband down-sweeps, not this song, so do not expect the field events to match them.",
+  norgos:"Harsh, rapid \"kak-kak-kak\" alarm calls at about 1.5-4 kHz, and a wailing \"kree-ah\"; loud, broadband, usually near the nest."};
+
+const S = { mode:"guide", groups:{queue:[],reference:[],practice:[]}, labels:{}, pos:{queue:0,practice:0,reference:0},
+            item:null, wav:null, spec:null, L:null, t0:0, plays:0, revealed:false, session:0,
+            fmax:4000, floor:35, ceil:99.5, rate:1, gainDb:0, loop:false, playhead:null };
+const $ = (s, r=document) => r.querySelector(s);
+const el = (h) => { const d = document.createElement("div"); d.innerHTML = h.trim(); return d.firstChild; };
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* ---------- storage / network ---------- */
+const store = { get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+                set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} } };
+let labeler = store.get("labeler", "");
+let pending = store.get("pending", []);
+function status(msg, bad) { const s = $("#status"); s.textContent = msg; s.className = bad ? "bad" : ""; }
+async function api(path, opts) { const r = await fetch("api/" + path, opts); if (!r.ok) throw new Error(path + " " + r.status); return r; }
+async function flush() {
+  while (pending.length) {
+    try { await api("label", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(pending[0])}); pending.shift(); store.set("pending", pending); }
+    catch (e) { status(`${pending.length} label(s) not saved yet, will retry`, true); return; }
+  }
+  status("all labels saved");
+}
+setInterval(flush, 10000);
+
+/* ---------- wav + spectrogram ---------- */
+function parseWav(ab) {
+  const v = new DataView(ab); let p = 12, sr = 8000, data = null;
+  while (p + 8 <= v.byteLength) {
+    const id = String.fromCharCode(v.getUint8(p), v.getUint8(p+1), v.getUint8(p+2), v.getUint8(p+3)), n = v.getUint32(p+4, true);
+    if (id === "fmt ") sr = v.getUint32(p + 12, true);
+    if (id === "data") { data = new Int16Array(ab.slice(p + 8, p + 8 + n - (n % 2))); break; }
+    p += 8 + n + (n % 2);
+  }
+  const x = new Float32Array(data.length); for (let i = 0; i < x.length; i++) x[i] = data[i] / 32768;
+  return {x, sr};
+}
+function fft(re, im) {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) { let b = n >> 1; for (; j & b; b >>= 1) j ^= b; j ^= b; if (i < j) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]]; } }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = -2 * Math.PI / len, wr = Math.cos(ang), wi = Math.sin(ang);
+    for (let i = 0; i < n; i += len) { let cr = 1, ci = 0;
+      for (let k = 0; k < len / 2; k++) {
+        const a = i + k, b = i + k + len / 2, tr = re[b] * cr - im[b] * ci, ti = re[b] * ci + im[b] * cr;
+        re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti; const nr = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = nr; } } }
+}
+function stft(x, sr) {
+  const N = 512, hop = Math.max(1, Math.round(sr * 0.008)), nb = N / 2, nf = Math.max(1, Math.floor((x.length - N) / hop) + 1);
+  const win = new Float32Array(N).map((_, i) => 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (N - 1)));
+  const re = new Float32Array(N), im = new Float32Array(N), out = new Float32Array(nf * nb);
+  for (let f = 0; f < nf; f++) {
+    for (let i = 0; i < N; i++) { re[i] = (x[f * hop + i] || 0) * win[i]; im[i] = 0; }
+    fft(re, im);
+    for (let k = 0; k < nb; k++) out[f * nb + k] = 10 * Math.log10(re[k] * re[k] + im[k] * im[k] + 1e-10);
+  }
+  return {S: out, nf, nb, hop, N, sr, dur: x.length / sr};
+}
+const LUT = (() => {  // magma-like colour map
+  const A = [[0,0,4],[28,16,68],[79,18,123],[129,37,129],[181,54,122],[229,80,100],[251,135,97],[254,194,135],[252,253,191]];
+  const L = new Uint8ClampedArray(256 * 3);
+  for (let i = 0; i < 256; i++) { const t = i / 255 * (A.length - 1), j = Math.min(Math.floor(t), A.length - 2), f = t - j;
+    for (let c = 0; c < 3; c++) L[i*3+c] = A[j][c] * (1 - f) + A[j+1][c] * f; }
+  return L;
+})();
+const M = {l:46, b:20, t:4, r:4};  // canvas margins
+const W = 1300, H = 330;
+
+function pct(arr, p) { const s = Array.from(arr).sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p / 100 * s.length))]; }
+function bandValues(sp) {
+  const top = Math.min(sp.nb, Math.round(S.fmax / (sp.sr / sp.N))), vals = [];
+  for (let f = 0; f < sp.nf; f += 2) for (let k = 0; k < top; k += 2) vals.push(sp.S[f * sp.nb + k]);
+  return vals;
+}
+function drawSpec() {
+  const cv = $("#spec"); if (!cv || !S.spec) return;
+  const sp = S.spec, ctx = cv.getContext("2d"), pw = W - M.l - M.r, ph = H - M.t - M.b;
+  const vals = bandValues(sp), lo = pct(vals, S.floor), hi = Math.max(pct(vals, S.ceil), lo + 1);
+  const top = Math.min(sp.nb, Math.round(S.fmax / (sp.sr / sp.N)));
+  const img = ctx.createImageData(pw, ph);
+  for (let y = 0; y < ph; y++) {
+    const k = Math.min(top - 1, Math.floor((1 - y / ph) * top));
+    for (let x = 0; x < pw; x++) {
+      const f = Math.min(sp.nf - 1, Math.floor(x / pw * sp.nf));
+      const v = Math.max(0, Math.min(1, (sp.S[f * sp.nb + k] - lo) / (hi - lo))), c = Math.round(v * 255) * 3, o = (y * pw + x) * 4;
+      img.data[o] = LUT[c]; img.data[o+1] = LUT[c+1]; img.data[o+2] = LUT[c+2]; img.data[o+3] = 255;
+    }
+  }
+  S.base = img;
+  paint();
+}
+function paint() {
+  const cv = $("#spec"); if (!cv || !S.base || !S.item) return;
+  const ctx = cv.getContext("2d"), sp = S.spec, pw = W - M.l - M.r, ph = H - M.t - M.b;
+  ctx.fillStyle = "#14161a"; ctx.fillRect(0, 0, W, H);
+  ctx.putImageData(S.base, M.l, M.t);
+  const [f0, f1] = S.item.focal, xs = t => M.l + t / sp.dur * pw;
+  ctx.fillStyle = "rgba(90,169,255,0.10)"; ctx.fillRect(xs(f0), M.t, xs(f1) - xs(f0), ph);
+  ctx.strokeStyle = "rgba(90,169,255,0.9)"; ctx.setLineDash([6, 4]); ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(xs(f0), M.t); ctx.lineTo(xs(f0), M.t + ph); ctx.moveTo(xs(f1), M.t); ctx.lineTo(xs(f1), M.t + ph); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = "#9aa1ad"; ctx.font = "11px system-ui"; ctx.textAlign = "right";
+  const step = S.fmax <= 1000 ? 100 : S.fmax <= 2000 ? 250 : 500;
+  for (let f = 0; f <= S.fmax; f += step) { const y = M.t + ph * (1 - f / S.fmax); ctx.fillText(f >= 1000 ? (f / 1000) + "k" : f, M.l - 5, y + 4);
+    ctx.fillStyle = "rgba(255,255,255,0.06)"; ctx.fillRect(M.l, y, pw, 1); ctx.fillStyle = "#9aa1ad"; }
+  ctx.textAlign = "center";
+  for (let t = 0; t <= sp.dur; t += 1) { const x = xs(t); ctx.fillRect(x, M.t + ph, 1, 4); if (t % 2 === 0) ctx.fillText(t + " s", x, H - 4); }
+  if (S.playhead !== null) { const x = xs(S.playhead); ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x, M.t); ctx.lineTo(x, M.t + ph); ctx.stroke(); }
+  if (S.hover) { ctx.strokeStyle = "rgba(255,255,255,0.35)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(S.hover.x, M.t); ctx.lineTo(S.hover.x, M.t + ph); ctx.moveTo(M.l, S.hover.y); ctx.lineTo(M.l + pw, S.hover.y); ctx.stroke(); }
+}
+
+/* ---------- audio ---------- */
+let actx = null, gainNode = null, src = null, startedAt = 0, startOff = 0, raf = 0;
+function ensureAudio() {
+  if (actx) return;
+  actx = new (window.AudioContext || window.webkitAudioContext)();
+  gainNode = actx.createGain(); const comp = actx.createDynamicsCompressor();
+  gainNode.connect(comp); comp.connect(actx.destination); setGain();
+}
+function setGain() { if (gainNode) gainNode.gain.value = Math.pow(10, S.gainDb / 20); }
+function stop() { if (src) { try { src.stop(); } catch (e) {} src = null; } cancelAnimationFrame(raf); S.playhead = null; paint(); }
+function play(a, b) {
+  if (!S.wav) return; ensureAudio(); actx.resume(); stop();
+  const {x, sr} = S.wav, buf = actx.createBuffer(1, x.length, sr); buf.copyToChannel(x, 0);
+  src = actx.createBufferSource(); src.buffer = buf; src.playbackRate.value = S.rate; src.connect(gainNode);
+  const dur = x.length / sr; a = Math.max(0, a); b = Math.min(dur, b);
+  if (S.loop) { src.loop = true; src.loopStart = a; src.loopEnd = b; src.start(0, a); } else src.start(0, a, b - a);
+  startedAt = actx.currentTime; startOff = a; S.plays++;
+  const tick = () => { let t = startOff + (actx.currentTime - startedAt) * S.rate;
+    if (S.loop) t = a + ((t - a) % (b - a)); if (!S.loop && t > b + 0.05) { stop(); return; }
+    S.playhead = t; paint(); raf = requestAnimationFrame(tick); };
+  tick();
+}
+const playAll = () => play(0, S.wav ? S.wav.x.length / S.wav.sr : 0);
+const playFocal = () => S.item && play(S.item.focal[0], S.item.focal[1]);
+
+/* ---------- item loading and labels ---------- */
+const list = () => S.groups[S.mode === "label" ? "queue" : S.mode];
+const key = () => S.mode === "label" ? "queue" : S.mode;
+const labeled = (id) => !!S.labels[id];
+function blankL() { return {species:new Set(), certainty:"sure", none:false, unsure:false, tags:new Set(), edge:false, discuss:false, notes:""}; }
+function fromRecord(r) { return {species:new Set(r.species || []), certainty:r.certainty || "sure", none:!!r.none, unsure:!!r.unsure, tags:new Set(r.tags || []),
+                                 edge:!!r.edge, discuss:!!r.discuss, notes:r.notes || ""}; }
+async function loadItem(i) {
+  stop(); const L = list(); if (!L.length) return;
+  i = Math.max(0, Math.min(L.length - 1, i)); S.pos[key()] = i; store.set("pos_" + key() + "_" + labeler, i);
+  const it = L[i]; S.item = it; S.revealed = false; S.wav = S.spec = S.base = null; S.plays = 0;
+  S.L = S.labels[it.id] ? fromRecord(S.labels[it.id]) : blankL();
+  renderCenter(); paint();
+  try { const ab = await (await api("clip/" + it.id + ".wav")).arrayBuffer(); if (S.item !== it) return;
+    S.wav = parseWav(ab); S.spec = stft(S.wav.x, S.wav.sr); drawSpec(); S.t0 = performance.now(); if (S.autoplay) playFocal(); }
+  catch (e) { status("could not load audio: " + e.message, true); }
+  renderSide();
+}
+function truthText(it) { return (it.truth || []).map(c => NAME[c]).join(" + "); }
+function record() {
+  const L = S.L; return {id:S.item.id, labeler, species:[...L.species], certainty:L.species.size ? L.certainty : null, none:L.none, unsure:L.unsure,
+    tags:[...L.tags], edge:L.edge, discuss:L.discuss, notes:L.notes, ms:Math.round(performance.now() - S.t0), plays:S.plays, mode:S.mode};
+}
+function valid() { const L = S.L; return L.species.size > 0 || L.none || L.unsure; }
+async function save(advance = true) {
+  if (!labeler) { toast("Enter a labeler name first (top right)."); $("#labeler").focus(); return; }
+  if (!valid()) { toast("Pick a species, \"none of the five\" (N) or \"unsure\" (U) first."); return; }
+  if (S.mode === "practice" && S.revealed) { S.revealed = false; return next(); }
+  const rec = record(); S.labels[rec.id] = rec; pending.push(rec); store.set("pending", pending); flush(); S.session++;
+  if (S.session % 50 === 0) toast(`${S.session} labeled this session. Take a 5 minute break for your ears.`, 8000);
+  if (S.mode === "practice") { S.revealed = true; renderCenter(); renderSide(); return; }
+  renderSide(); if (advance) next();
+}
+function next() { const L = list(), i = S.pos[key()] + 1; if (i >= L.length) { toast("End of this list."); renderSide(); return; } loadItem(i); }
+function prev() { loadItem(S.pos[key()] - 1); }
+function firstUnlabeled() { const L = list(); const i = L.findIndex(it => !labeled(it.id)); return i < 0 ? L.length - 1 : i; }
+
+/* ---------- toggles (used by keys and buttons) ---------- */
+function toggleSpecies(code) { const L = S.L; if (L.species.has(code)) L.species.delete(code); else L.species.add(code); if (L.species.size) { L.none = false; L.unsure = false; } renderLabel(); }
+function setNone() { const L = S.L; L.none = !L.none; if (L.none) { L.species.clear(); L.unsure = false; } renderLabel(); }
+function setUnsure() { const L = S.L; L.unsure = !L.unsure; if (L.unsure) { L.species.clear(); L.none = false; } renderLabel(); }
+function toggleTag(code) { const L = S.L; if (L.tags.has(code)) L.tags.delete(code); else L.tags.add(code); renderLabel(); }
+
+/* ---------- rendering ---------- */
+const TABS = [["guide", "Guide"], ["reference", "Reference sounds"], ["practice", "Practice"], ["label", "Label"], ["progress", "Progress"]];
+function renderTabs() {
+  const t = $("#tabs"); t.innerHTML = "";
+  TABS.forEach(([m, n]) => { const b = el(`<button class="${S.mode === m ? "on" : ""}">${n}</button>`); b.onclick = () => setMode(m); t.append(b); });
+}
+async function setMode(m) {
+  stop(); S.mode = m; store.set("mode", m); renderTabs();
+  const wide = (m === "guide" || m === "progress"); $("#main").className = wide ? "wide" : "";
+  $("#side").style.display = wide ? "none" : "";
+  if (wide) { S.item = null; renderCenter(); return; }
+  const i = m === "reference" ? S.pos.reference : firstUnlabeled();
+  await loadItem(i);
+}
+function renderSide() {
+  const a = $("#side"); if (S.mode === "guide" || S.mode === "progress") return;
+  const L = list(), k = key(); a.innerHTML = "";
+  if (S.mode === "reference") {
+    a.append(el(`<div class="mute">Confirmed examples. Play them at normal speed and at 0.5x until the shapes are familiar.</div>`));
+    SPECIES.forEach(sp => {
+      a.append(el(`<h3>${sp.name}</h3>`)); a.append(el(`<div class="mute" style="font-size:12px;margin-bottom:4px">${DESC[sp.code]}</div>`));
+      L.forEach((it, i) => { if (it.species !== sp.code) return;
+        const b = el(`<button class="item ${i === S.pos.reference ? "on" : ""}">${esc(it.title.replace(/^[^:]+: /, ""))}</button>`); b.onclick = () => loadItem(i); a.append(b); });
+    });
+    return;
+  }
+  const done = L.filter(it => labeled(it.id)).length, pct = L.length ? Math.round(100 * done / L.length) : 0;
+  a.append(el(`<div><b>${S.mode === "practice" ? "Practice" : "Queue"}</b><div class="bar" style="margin:6px 0"><div style="width:${pct}%"></div></div>
+    <div class="mute">${done} of ${L.length} labeled (${pct}%)</div></div>`));
+  if (S.mode === "label" && S.item) a.append(el(`<div class="mute" style="margin-top:6px">Priority tier ${S.item.tier}: tier 1 is the first 300, tier 2 up to 800. Stopping at any point still gives a usable sample.</div>`));
+  const go = el(`<div class="row"><button class="btn" id="jump">Jump to first unlabeled</button></div>`); go.firstChild.onclick = () => loadItem(firstUnlabeled()); a.append(go);
+  const lo = Math.max(0, S.pos[k] - 6), hi = Math.min(L.length, S.pos[k] + 12);
+  for (let i = lo; i < hi; i++) { const b = el(`<button class="item ${i === S.pos[k] ? "on" : ""} ${labeled(L[i].id) ? "done" : ""}">Item ${i + 1}</button>`); b.onclick = () => loadItem(i); a.append(b); }
+}
+function ctlButtons() {
+  return `<div class="row">
+    <button class="btn primary" id="bplay">Play clip <small>Space</small></button>
+    <button class="btn" id="bfocal">Play shaded part <small>A</small></button>
+    <button class="btn" id="bstop">Stop</button>
+    <label class="mute">speed <select id="rate"><option>0.5</option><option>0.75</option><option selected>1</option><option>1.5</option><option>2</option></select></label>
+    <label class="mute">gain <input type="range" id="gain" min="0" max="30" value="${S.gainDb}" style="width:90px"> <span id="gainv">${S.gainDb} dB</span></label>
+    <label class="mute"><input type="checkbox" id="loop" ${S.loop ? "checked" : ""}> repeat <small>R</small></label>
+    <label class="mute"><input type="checkbox" id="auto" ${S.autoplay ? "checked" : ""}> autoplay</label>
+  </div>
+  <div class="row">
+    <label class="mute">max freq <select id="fmax"><option value="1000">1 kHz</option><option value="2000">2 kHz</option><option value="4000" selected>4 kHz</option></select></label>
+    <label class="mute">floor <input type="range" id="floor" min="0" max="90" value="${S.floor}" style="width:90px"></label>
+    <label class="mute">ceiling <input type="range" id="ceil" min="90" max="100" step="0.1" value="${S.ceil}" style="width:90px"></label>
+    <span class="mute" id="hoverinfo"></span>
+  </div>`;
+}
+function renderCenter() {
+  const c = $("#center"); c.innerHTML = "";
+  if (S.mode === "guide") { c.append(guide()); return; }
+  if (S.mode === "progress") { c.append(progress()); return; }
+  const it = S.item; if (!it) { c.append(el(`<section class="card">No items in this list.</section>`)); return; }
+  const L = list(), k = key();
+  const head = S.mode === "reference" ? `<b>${esc(it.title)}</b><div class="mute">${DESC[it.species] || ""}</div>`
+    : `<b>Item ${S.pos[k] + 1} of ${L.length}</b> <span class="mute">&mdash; decide what is in the <span style="color:var(--accent)">shaded region</span> (${(it.focal[1] - it.focal[0]).toFixed(1)} s); the rest is context.</span>`;
+  const card = el(`<section class="card">${head}<canvas id="spec" width="${W}" height="${H}"></canvas>${ctlButtons()}<div id="label"></div></section>`);
+  c.append(card);
+  const cv = $("#spec", card);
+  cv.onmousemove = (e) => { const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) / r.width * W, y = (e.clientY - r.top) / r.height * H;
+    if (!S.spec) return; const pw = W - M.l - M.r, ph = H - M.t - M.b, t = (x - M.l) / pw * S.spec.dur, f = (1 - (y - M.t) / ph) * S.fmax;
+    S.hover = {x, y}; $("#hoverinfo").textContent = (t >= 0 && f >= 0) ? `${t.toFixed(2)} s, ${Math.round(f)} Hz` : ""; paint(); };
+  cv.onmouseleave = () => { S.hover = null; paint(); };
+  cv.onclick = (e) => { const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) / r.width * W; if (!S.spec) return;
+    const t = (x - M.l) / (W - M.l - M.r) * S.spec.dur; play(Math.max(0, t), S.spec.dur); };
+  $("#bplay").onclick = () => S.playhead === null ? playAll() : stop(); $("#bfocal").onclick = playFocal; $("#bstop").onclick = stop;
+  $("#rate").value = String(S.rate); $("#rate").onchange = (e) => { S.rate = +e.target.value; if (src) src.playbackRate.value = S.rate; };
+  $("#gain").oninput = (e) => { S.gainDb = +e.target.value; $("#gainv").textContent = S.gainDb + " dB"; setGain(); };
+  $("#loop").onchange = (e) => S.loop = e.target.checked; $("#auto").onchange = (e) => { S.autoplay = e.target.checked; store.set("autoplay", S.autoplay); };
+  $("#fmax").value = String(S.fmax); $("#fmax").onchange = (e) => { S.fmax = +e.target.value; drawSpec(); };
+  $("#floor").oninput = (e) => { S.floor = +e.target.value; drawSpec(); }; $("#ceil").oninput = (e) => { S.ceil = +e.target.value; drawSpec(); };
+  if (S.mode !== "reference") renderLabel();
+  if (S.spec) drawSpec();
+}
+function renderLabel() {
+  const d = $("#label"); if (!d || !S.L) return; const L = S.L, it = S.item;
+  const sp = SPECIES.map(s => `<button class="btn sp ${L.species.has(s.code) ? "on" : ""}" data-sp="${s.code}">${s.name}<small>${s.k}</small></button>`).join("");
+  const tg = TAGS.map(t => `<button class="btn ${L.tags.has(t.code) ? "on" : ""}" data-tag="${t.code}">${t.name}<small>${t.k}</small></button>`).join("");
+  let reveal = "";
+  if (S.mode === "practice" && S.revealed) {
+    const truth = it.truth || [], got = [...L.species], ok = truth.length === got.length && truth.every(c => L.species.has(c));
+    reveal = `<div class="reveal ${ok ? "ok" : "no"}"><b>${ok ? "Correct." : "Not quite."}</b> Answer: ${truthText(it) || "no target species"}${it.title ? " (" + esc(it.title) + ")" : ""}. You said: ${got.map(c => NAME[c]).join(" + ") || (L.none ? "none of the five" : "unsure")}. Press <span class="kbd">Enter</span> for the next clip.</div>`;
+  }
+  d.innerHTML = `<div class="row"><b>Which target species do you hear in the shaded region?</b> <span class="mute">(select all that apply)</span></div>
+    <div class="row">${sp}<button class="btn none ${L.none ? "on" : ""}" id="bnone">None of the five<small>N</small></button><button class="btn unsure ${L.unsure ? "on" : ""}" id="bunsure">Unsure / cannot tell<small>U</small></button></div>
+    <div class="row"><span class="mute">Certainty:</span><button class="btn ${L.certainty === "sure" ? "on" : ""}" id="csure">Sure</button><button class="btn ${L.certainty === "probable" ? "on" : ""}" id="cprob">Probable</button><small class="mute">C toggles</small></div>
+    <div class="row"><span class="mute">What else do you hear?</span>${tg}</div>
+    <div class="row"><button class="btn ${L.edge ? "on" : ""}" id="bedge">Call only partly inside the shaded part<small>E</small></button>
+      <button class="btn ${L.discuss ? "on" : ""}" id="bdisc">Flag for discussion<small>D</small></button>
+      <input type="text" id="notes" placeholder="notes (/ to focus)" size="30" value="${esc(L.notes)}"></div>
+    ${reveal}
+    <div class="row"><button class="btn" id="bprev">Back <small>Backspace</small></button><button class="btn primary" id="bsave">${S.revealed ? "Next" : "Save and next"} <small>Enter</small></button>
+      <span class="mute">${labeled(it.id) ? "already labeled: saving replaces your earlier label" : ""}</span></div>`;
+  d.querySelectorAll("[data-sp]").forEach(b => b.onclick = () => toggleSpecies(b.dataset.sp));
+  d.querySelectorAll("[data-tag]").forEach(b => b.onclick = () => toggleTag(b.dataset.tag));
+  $("#bnone").onclick = setNone; $("#bunsure").onclick = setUnsure;
+  $("#csure").onclick = () => { L.certainty = "sure"; renderLabel(); }; $("#cprob").onclick = () => { L.certainty = "probable"; renderLabel(); };
+  $("#bedge").onclick = () => { L.edge = !L.edge; renderLabel(); }; $("#bdisc").onclick = () => { L.discuss = !L.discuss; renderLabel(); };
+  $("#notes").oninput = (e) => L.notes = e.target.value; $("#bprev").onclick = prev; $("#bsave").onclick = () => save(true);
+}
+
+/* ---------- guide and progress ---------- */
+function guide() {
+  const sp = SPECIES.map(s => `<tr><td><b>${s.name}</b></td><td>${DESC[s.code]}</td></tr>`).join("");
+  return el(`<section class="card" style="max-width:900px"><h2>How to annotate</h2>
+  <p>You are labeling short clips so we can tell which detections are real. Each clip has a <b>shaded region</b> (the window a model looked at, or a random one) with a few seconds of context around it. You never see model scores. Decide what is in the shaded region by ear <i>and</i> by spectrogram.</p>
+  <h4>Before you start</h4><ol>
+   <li>Use headphones in a quiet room. Everything of interest is below 4 kHz (the recordings are 8 kHz).</li>
+   <li>Open <b>Reference sounds</b> (about 45 min): play every example at normal speed and at 0.5x, and match the sound to its spectrogram shape.</li>
+   <li>Do the <b>Practice</b> set (about 30 clips). It tells you the answer after each label. Continue when it feels routine.</li>
+   <li>Then work through <b>Label</b> in blocks of about 50 with short breaks. The order is designed so that stopping at any point still gives an unbiased sample.</li></ol>
+  <h4>The five targets (general descriptions; the reference clips take precedence)</h4>
+  <table>${sp}</table>
+  <h4>What they are not</h4><p>Frogs and insects (dense pulsed chorus around 2-3 kHz), wind and rain (broadband, low), a steady tone or hum, other birds and owls, human or machine noise. Tag these when you hear them: they are the likely cause of the false detections, so the tags are part of the investigation.</p>
+  <h4>Rules</h4><ul>
+   <li>Label what is in the <b>shaded region</b> (plus about 1 s either side). If a call lies mostly in the context but not in the shaded part, mark <span class="kbd">E</span>.</li>
+   <li>Several species can be present: tick all that apply. Nothing there: <b>None of the five</b>. Cannot decide: <b>Unsure</b>. Do not guess: Unsure is informative.</li>
+   <li>Certainty: <b>Sure</b> = you would stake the label on it; <b>Probable</b> = it fits but is faint or partial.</li>
+   <li>Play the clip more than once if you are unsure, at 0.5x for fast calls and with more gain for faint ones. Change max frequency to 1 kHz for the low owls.</li>
+   <li>Some clips repeat later without notice; they measure how consistent labeling is.</li></ul>
+  <h4>Keys</h4><table>
+   <tr><td><span class="kbd">1</span>-<span class="kbd">5</span></td><td>species: barred, boreal, great gray, flammulated, goshawk</td></tr>
+   <tr><td><span class="kbd">N</span> / <span class="kbd">U</span></td><td>none of the five / unsure</td></tr>
+   <tr><td><span class="kbd">C</span></td><td>toggle sure / probable</td></tr>
+   <tr><td><span class="kbd">F W B O H T Q</span></td><td>frog-insect, wind-rain, other bird, other owl-animal, human-machine, steady tone, very quiet</td></tr>
+   <tr><td><span class="kbd">E</span> / <span class="kbd">D</span> / <span class="kbd">/</span></td><td>call partly outside / flag for discussion / notes</td></tr>
+   <tr><td><span class="kbd">Space</span> / <span class="kbd">A</span> / <span class="kbd">R</span> / <span class="kbd">S</span></td><td>play or stop the clip / play the shaded part / repeat / cycle speed</td></tr>
+   <tr><td><span class="kbd">Enter</span> / <span class="kbd">Backspace</span></td><td>save and next / back</td></tr>
+   <tr><td>click the spectrogram</td><td>play from that point</td></tr></table>
+  <p class="mute">Labels are saved to the server as you go (see the status at the top right). You can close the tab and continue later.</p></section>`);
+}
+function progress() {
+  const Q = S.groups.queue, mine = Q.filter(it => labeled(it.id));
+  const by = (f) => { const o = {}; mine.forEach(it => { const v = f(S.labels[it.id], it); o[v] = (o[v] || 0) + 1; }); return o; };
+  const lab = (r) => r.unsure ? "unsure" : r.none ? "none of the five" : r.species.map(c => NAME[c]).sort().join(" + ");
+  const tiers = [1, 2, 3].map(t => { const all = Q.filter(it => it.tier === t), d = all.filter(it => labeled(it.id)).length; return `<tr><td>Tier ${t}</td><td>${d} / ${all.length}</td></tr>`; }).join("");
+  const rows = (o) => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join("");
+  const ms = mine.map(it => S.labels[it.id].ms).filter(x => x > 0).sort((a, b) => a - b), med = ms.length ? ms[Math.floor(ms.length / 2)] / 1000 : 0;
+  let agree = 0, nd = 0; Q.forEach(it => { if (!it.dup_of) return; const a = S.labels[it.id], b = S.labels[it.dup_of]; if (a && b) { nd++; if (lab(a) === lab(b)) agree++; } });
+  const rest = Q.length - mine.length;
+  return el(`<section class="card" style="max-width:900px"><h2>Progress</h2>
+   <div class="bar"><div style="width:${Q.length ? 100 * mine.length / Q.length : 0}%"></div></div>
+   <p>${mine.length} of ${Q.length} queue items labeled by <b>${esc(labeler || "(no name)")}</b>. Median time per item ${med.toFixed(1)} s${med ? `, so about ${(rest * med / 3600).toFixed(1)} h remain at this pace` : ""}.</p>
+   <div class="grid2"><div><h4>By tier</h4><table>${tiers}</table><h4>Consistency</h4><p>${nd ? `${agree} of ${nd} repeated clips got the same label as the first time` : "no repeated clips seen yet"}.</p></div>
+   <div><h4>Labels so far</h4><table>${rows(by(lab)) || "<tr><td>none yet</td></tr>"}</table></div></div>
+   <div class="row"><button class="btn" id="csv">Download my labels (CSV)</button><span class="mute">Labels are already stored on the server; this is only a personal copy.</span></div></section>`);
+}
+function downloadCsv() {
+  const rows = [["id","labeler","species","certainty","none","unsure","tags","edge","discuss","notes","ms","plays"]];
+  Object.values(S.labels).forEach(r => rows.push([r.id, r.labeler, (r.species||[]).join("|"), r.certainty||"", r.none, r.unsure, (r.tags||[]).join("|"), r.edge, r.discuss, '"' + (r.notes||"").replace(/"/g, '""') + '"', r.ms, r.plays]));
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([rows.map(r => r.join(",")).join("\n")], {type:"text/csv"})); a.download = "my_labels.csv"; a.click();
+}
+document.addEventListener("click", (e) => { if (e.target && e.target.id === "csv") downloadCsv(); });
+
+/* ---------- keyboard ---------- */
+let toastT = 0;
+function toast(m, ms = 3500) { const t = $("#toast"); t.textContent = m; t.style.display = "block"; clearTimeout(toastT); toastT = setTimeout(() => t.style.display = "none", ms); }
+document.addEventListener("keydown", (e) => {
+  const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName) && document.activeElement.type !== "range" && document.activeElement.type !== "checkbox";
+  if (typing) { if (e.key === "Escape" || (e.key === "Enter" && document.activeElement.id === "notes")) { document.activeElement.blur(); e.preventDefault(); } return; }
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (S.mode === "guide" || S.mode === "progress") return;
+  if (k === " ") { e.preventDefault(); S.playhead === null ? playAll() : stop(); return; }
+  if (k === "a") return playFocal();
+  if (k === "r") { S.loop = !S.loop; const c = $("#loop"); if (c) c.checked = S.loop; return; }
+  if (k === "s") { const r = [0.5, 0.75, 1, 1.5, 2]; S.rate = r[(r.indexOf(S.rate) + 1) % r.length]; $("#rate").value = String(S.rate); if (src) src.playbackRate.value = S.rate; toast("speed " + S.rate + "x", 900); return; }
+  if (S.mode === "reference") { if (k === "arrowdown" || k === "arrowright") loadItem(S.pos.reference + 1); if (k === "arrowup" || k === "arrowleft") loadItem(S.pos.reference - 1); return; }
+  if (!S.L || !S.item) return;
+  const sp = SPECIES.find(s => s.k === e.key); if (sp) return toggleSpecies(sp.code);
+  const tg = TAGS.find(t => t.k === k); if (tg) return toggleTag(tg.code);
+  if (k === "n") return setNone(); if (k === "u") return setUnsure();
+  if (k === "c") { S.L.certainty = S.L.certainty === "sure" ? "probable" : "sure"; return renderLabel(); }
+  if (k === "e") { S.L.edge = !S.L.edge; return renderLabel(); } if (k === "d") { S.L.discuss = !S.L.discuss; return renderLabel(); }
+  if (k === "/") { e.preventDefault(); $("#notes").focus(); return; }
+  if (k === "enter") { e.preventDefault(); return save(true); }
+  if (k === "backspace") { e.preventDefault(); return prev(); }
+});
+
+/* ---------- start ---------- */
+async function init() {
+  $("#labeler").value = labeler; $("#labeler").onchange = async (e) => { labeler = e.target.value.trim(); store.set("labeler", labeler); await loadLabels(); setMode(S.mode); };
+  S.autoplay = store.get("autoplay", false); renderTabs();
+  try { S.groups = await (await api("manifest")).json(); } catch (e) { status("cannot reach the server: " + e.message, true); return; }
+  await loadLabels(); await flush();
+  const m = store.get("mode", "guide"); await setMode(labeler || m === "guide" ? m : "guide");
+}
+async function loadLabels() { try { S.labels = await (await api("labels?labeler=" + encodeURIComponent(labeler))).json(); } catch (e) { S.labels = {}; } pending.forEach(r => { if (r.labeler === labeler) S.labels[r.id] = r; }); }
+init();
+</script>
+</body>
+</html>
