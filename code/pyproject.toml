@@ -13,5 +13,11 @@ packages = ["data_processing", "models", "training", "evaluation", "analysis"]
 [tool.ruff]
 line-length = 100
 
+[tool.ruff.lint]
+ignore = ["C408"]  # dict(key=value) is used on purpose for records
+
+[tool.ruff.lint.per-file-ignores]
+"**/[0-9][0-9]_*.py" = ["N999", "E402"]  # numbered notebook sources
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

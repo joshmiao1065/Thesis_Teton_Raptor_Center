@@ -60,5 +60,5 @@ def mix(bg, call, snr_db, rng):
 
 
 def read_bg(path, start_s):
-    y, sr = sf.read(str(path), start=int(start_s * SR), frames=WIN, dtype="float32")
+    y, _ = sf.read(str(path), start=int(start_s * SR), frames=WIN, dtype="float32")
     return y if y.ndim == 1 else y[:, 0]

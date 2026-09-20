@@ -8,7 +8,8 @@ long-term field recordings, using a pretrained bird-sound classifier (ConvNeXT, 
 site, and can they be reduced without losing performance at other sites and on benchmark data?
 
 **Approach.**
-1. Score every 5 s window (1 s hop) of the recordings and characterise the detections.
+1. Score every 5 s window (1 s hop) of the recordings with ConvNeXT (and every 3 s window with
+   BirdNET v2.4) and characterise the detections.
 2. Test candidate explanations with controlled experiments (for example the 8 kHz band limit).
 3. Train small "rescorer" heads on the frozen embeddings, using calls mixed into real background
    noise, and compare methods at equal false-alarm rates on held-out days, held-out sites and a
@@ -20,10 +21,11 @@ site, and can they be reduced without losing performance at other sites and on b
 |---|---|
 | `data_processing/` | audio loading and resampling, call-in-background mixtures, path configuration |
 | `models/` | model loading and batched preprocessing |
-| `evaluation/` | window scoring, feature extraction, event building, overview / band-limit / gallery notebooks |
+| `evaluation/` | window scoring (ConvNeXT and BirdNET), feature extraction, event building, overview / band-limit / gallery notebooks |
 | `training/` | rescorer heads, training scripts, evaluation notebooks (cross-site, benchmark, gated) |
 | `analysis/` | plotting helpers and a blind audit-sheet generator for human labelling |
-| `environments/` | pinned `requirements-*.txt` |
+| `environments/` | pinned `requirements-*.txt` (main and BirdNET venvs) and `birdnet_gpu.sh` (CUDA library path for BirdNET on a GPU) |
+| `tests/` | unit tests (`python -m pytest code/tests`) |
 
 Notebooks are [jupytext](https://jupytext.readthedocs.io) pairs; the tracked source is the `.py`
 file (percent format), and `.ipynb` files with outputs are kept locally.

@@ -18,7 +18,9 @@ import pandas as pd
 import soundfile as sf
 from scipy.signal import spectrogram
 
-from data_processing.paths import KALEIDOSCOPE, MURIE_AUDIO as FOREST
+from data_processing.paths import KALEIDOSCOPE
+from data_processing.paths import MURIE_AUDIO as FOREST
+
 CELL = {"borowl": 12, "norgos": 12, "brdowl": 8, "flaowl": 13}
 BINS = [(0.1, 0.2), (0.2, 0.5), (0.5, 0.9), (0.9, 1.01)]
 PAD = 3

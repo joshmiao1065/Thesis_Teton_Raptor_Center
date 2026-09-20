@@ -8,10 +8,10 @@ import numpy as np
 import pandas as pd
 import torch
 
-from data_processing.audio import WINDOW, STEP, gpu_resample, read_wav
+from data_processing.audio import STEP, WINDOW, gpu_resample, read_wav
+from data_processing.paths import RESULTS
+from data_processing.paths import SYNTHETIC as SYN
 from models.convnext import TARGETS, Preprocessor, load_model, target_ids
-
-from data_processing.paths import RESULTS, SYNTHETIC as SYN
 
 OUT = RESULTS / "bandlimit"; OUT.mkdir(parents=True, exist_ok=True)
 FOLDER2CODE = {"01-agos-american-northern-goshawk": "norgos", "02-ggow-great-gray-owl": "grgowl",

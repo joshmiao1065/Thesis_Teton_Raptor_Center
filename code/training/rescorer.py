@@ -8,9 +8,10 @@ measured as flagged windows per hour of held-out field audio.
 
 import numpy as np
 import torch
-import torch.nn as nn
+from torch import nn
 
 from data_processing.paths import INTERMEDIATE
+
 CODES = ["flaowl", "grgowl", "norgos", "brdowl", "borowl"]
 DAYS = {"train": [f"04{d:02d}" for d in range(2, 10)], "val": ["0410", "0411", "0412"], "test": ["0413", "0414", "0415"]}
 
@@ -129,7 +130,7 @@ def training_set(d, variant, every=3):
 
 def threshold_at(neg, per_hour):
     """Score threshold with `per_hour` flagged windows per hour of audio (1 s hop = 3600 windows/h)."""
-    k = max(int(round(len(neg) * per_hour / 3600)), 1)
+    k = max(round(len(neg) * per_hour / 3600), 1)
     return np.partition(neg, -k)[-k]
 
 
