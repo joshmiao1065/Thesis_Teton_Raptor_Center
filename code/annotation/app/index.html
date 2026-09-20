@@ -36,6 +36,8 @@
   .btn.unsure.on { background:var(--warn); border-color:var(--warn); }
   .btn small { opacity:.7; margin-left:4px; }
   .mute { color:var(--mute); }
+  .chip { display:inline-block; background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:1px 6px; margin:1px 4px 1px 0; font-size:12px; white-space:nowrap; }
+  .chip.t { border-color:var(--accent); color:var(--accent); }
   .kbd { background:var(--panel2); border:1px solid var(--line); border-radius:4px; padding:0 5px; font-family:ui-monospace,monospace; font-size:12px; }
   .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
   #toast { position:fixed; bottom:16px; right:16px; background:var(--panel2); border:1px solid var(--line); padding:10px 14px; border-radius:8px; display:none; max-width:340px; }
@@ -222,18 +224,23 @@ async function showScores(auto) {
 }
 function toggleScores() { if (!S.item) return; if (S.scoresShown) { S.scoresShown = false; renderScores(); } else showScores(false); }
 function lcell(v) { const c = v >= 0 ? "var(--good)" : v >= -2.2 ? "var(--warn)" : "var(--mute)"; return `<td style="color:${c};text-align:right" title="probability ${(100 / (1 + Math.exp(-v))).toFixed(1)}%">${v.toFixed(2)}</td>`; }
+const TARGET_NAMES = new Set(["Barred Owl", "Boreal Owl", "Great Gray Owl", "Flammulated Owl", "Northern Goshawk", "brdowl", "borowl", "grgowl", "flaowl", "norgos"]);
+const prob = (v) => 1 / (1 + Math.exp(-v)), pfmt = (p) => p >= 0.1 ? (100 * p).toFixed(0) + "%" : p >= 0.001 ? (100 * p).toFixed(1) + "%" : "<0.1%";
+function chips(top) {
+  return top.map(([n, v], i) => `<span class="chip ${TARGET_NAMES.has(n) ? "t" : ""}" title="logit ${v.toFixed(2)}">${i + 1}. ${esc(NAME[n] || n)} <b>${pfmt(prob(v))}</b> <span class="mute">${v.toFixed(2)}</span></span>`).join("");
+}
 function scoreTable(title, rows) {
   if (!rows.length) return `<div class="mute">${title}: no windows</div>`;
   const head = ORDER.map(c => `<th style="text-align:right">${SH[c]}</th>`).join("");
-  const body = rows.map(w => `<tr><td class="mute">${w.t.toFixed(1)}</td>${ORDER.map(c => lcell(w.logits[c])).join("")}<td class="mute">${w.top.map(t => esc(t[0]) + " " + t[1].toFixed(2)).join("; ")}</td></tr>`).join("");
-  return `<div><b>${title}</b><table style="margin-top:4px"><tr><th>window start (s)</th>${head}<th>top class(es) over all classes</th></tr>${body}</table></div>`;
+  const body = rows.map(w => `<tr><td class="mute">${w.t.toFixed(1)}</td>${ORDER.map(c => lcell(w.logits[c])).join("")}<td>${chips(w.top)}</td></tr>`).join("");
+  return `<div><b>${title}</b><table style="margin-top:4px"><tr><th>window start (s)</th>${head}<th>top 5 classes over all classes: probability, logit</th></tr>${body}</table></div>`;
 }
 function renderScores() {
   const d = $("#scores"); if (!d) return;
   if (!S.scoresShown || !S.scores) { d.innerHTML = ""; return; }
   const sc = S.scores;
   if (sc.none) { d.innerHTML = `<div class="reveal">No stored scores for this clip.</div>`; return; }
-  d.innerHTML = `<div class="reveal"><div class="mute" style="margin-bottom:6px">Logits (log-odds before the sigmoid) of the windows overlapping the shaded region; times are seconds into the clip. 0 = 50%, -2.2 = 10%. ${S.mode === "label" ? "<b>Your label for this clip will be marked as made with the scores visible.</b>" : ""}</div>
+  d.innerHTML = `<div class="reveal"><div class="mute" style="margin-bottom:6px">Logits (log-odds before the sigmoid) of the windows overlapping the shaded region; times are seconds into the clip. The five target columns show logits (0 = 50%, -2.2 = 10%); the last column lists the model's five highest-scoring classes over all species, target species outlined. ${S.mode === "label" ? "<b>Your label for this clip will be marked as made with the scores visible.</b>" : ""}</div>
     ${scoreTable("ConvNeXT (5 s windows, 1 s hop)", sc.cx)}<div style="height:8px"></div>${scoreTable("BirdNET (3 s windows)", sc.bn)}</div>`;
 }
 
@@ -307,6 +314,7 @@ function renderSide() {
   if (browse()) {
     a.append(el(`<div class="mute">${S.mode === "examples" ? "Model-flagged clips at dawn and dusk, with both models' logits shown below the spectrogram. Not part of the blind queue." : "Confirmed examples."} Play them at normal speed and at 0.5x until the shapes are familiar.</div>`));
     SPECIES.forEach(sp => {
+      if (!L.some(it => it.species === sp.code)) return;
       a.append(el(`<h3>${sp.name}</h3>`)); if (S.mode === "reference") a.append(el(`<div class="mute" style="font-size:12px;margin-bottom:4px">${DESC[sp.code]}</div>`));
       L.forEach((it, i) => { if (it.species !== sp.code) return;
         const b = el(`<button class="item ${i === S.pos[S.mode] ? "on" : ""}">${esc(it.title.replace(/^[^:]+: /, ""))}</button>`); b.onclick = () => loadItem(i); a.append(b); });

@@ -40,8 +40,16 @@ class State:
             key.chmod(0o600)
         self.key = key.read_text().strip()
         self.labels_path = self.dir / "labels.jsonl"
+        self._scores = (0.0, {})
+
+    @property
+    def scores(self):
+        """scores.json, re-read whenever the file changes (so a refresh needs no server restart)."""
         sp = self.dir / "scores.json"
-        self.scores = json.loads(sp.read_text()) if sp.exists() else {}
+        mtime = sp.stat().st_mtime if sp.exists() else 0.0
+        if mtime != self._scores[0]:
+            self._scores = (mtime, json.loads(sp.read_text()) if sp.exists() else {})
+        return self._scores[1]
 
     @staticmethod
     def public(it):
