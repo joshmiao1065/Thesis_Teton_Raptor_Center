@@ -42,6 +42,8 @@ def load_labels(folder, labeler=None):
     df = pd.DataFrame(rows)
     if df.empty:
         return df
+    seen = folder / "unblinded.txt"  # items whose model scores the annotator looked at before labeling
+    df["unblinded"] = df.id.isin(set(seen.read_text().split()) if seen.exists() else set())
     main = df[df.dup_of.isna()]
     n = main.groupby(["labeler", "stratum"]).id.transform("size")
     df["weight"] = (main["pop"] / n).reindex(df.index)

@@ -76,5 +76,5 @@ def test_server_hides_scores_requires_key_serves_clips_and_stores_labels(tmp_pat
     finally:
         srv.shutdown()
     df = load_labels(tmp_path)
-    assert list(df.is_brdowl) == [True] and df.weight.iloc[0] == 100
+    assert list(df.is_brdowl) == [True] and df.weight.iloc[0] == 100 and not df.unblinded.any()
     assert weighted_rate(df, "is_brdowl", "stratum").iloc[0] == 1.0
