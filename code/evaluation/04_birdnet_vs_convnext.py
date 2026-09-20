@@ -37,6 +37,7 @@ import numpy as np
 import pandas as pd
 
 from data_processing.paths import INTERMEDIATE, KALEIDOSCOPE
+from evaluation.birdnet_compare import load_birdnet
 from training.rescorer import CODES, DAYS, Rescorer, gate, load_region
 
 plt.rcParams.update({"figure.dpi": 100, "axes.grid": True, "grid.alpha": 0.3})
@@ -182,6 +183,9 @@ results = {
     "BirdNET p": curve(bn_f, bn_s, 3, Pb[:, k], RATES),
     "ConvNeXT p": curve(cx["file"], cx["start_s"], 5, Pc[:, k], RATES),
 }
+if len(list((INTERMEDIATE / "birdnet_murie_1s").glob("*.npz"))) == 198:  # BirdNET with 1 s hop (overlap 2 s), like ConvNeXT
+    b1 = load_birdnet("birdnet_murie_1s")
+    results["BirdNET p, 1 s hop"] = curve(b1.file.to_numpy(), b1.start_s.to_numpy(), 3, b1[f"p_{CODES[k]}"].to_numpy(), RATES)
 for hn in ("hard_lin", "hard_mlp"):
     h = Rescorer.load(INTERMEDIATE / "rescorer" / "m_all_raw" / f"{hn}.pt")
     S = h.predict(cx["emb"])
@@ -209,7 +213,10 @@ res.round(2)
 # * **Recall on the 35 confirmed calls.** At equal flagged time, BirdNET reaches recall 0.37 at 1 s/h,
 #   0.83 at 5 s/h and 1.0 at 10 s/h; ConvNeXT probability 0.14, 0.57 and 0.94; the Murie-trained
 #   heads are no better than ConvNeXT's probability here (the gate makes no difference for barred).
+# * **1 s hop.** Scoring BirdNET with a 1 s hop (like ConvNeXT) lowers its curve (recall 0.26, 0.43, 0.69
+#   and 0.97 at 1, 2, 5 and 10 flagged s/h) because overlapping windows flag more audio per call. It
+#   stays above ConvNeXT's probability (0.14, 0.17, 0.57, 0.94) by about 0.1 at 2 to 7 s/h, which is
+#   about 4 of the 35 calls: part of BirdNET's earlier lead was window granularity, not all of it.
 # * **Caveat.** ConvNeXT windows are 5 s and BirdNET's 3 s, so one call costs ConvNeXT at least 5 s of
-#   flagged time and BirdNET 3 s: part of BirdNET's lead is granularity (a shift of the ConvNeXT
-#   curves by at most a factor 5/3 along the x axis). Real barred calls inside the "negative" audio
-#   inflate every rate equally. There are 35 calls, so one call is 0.03.
+#   flagged time and BirdNET 3 s. Real barred calls inside the "negative" audio inflate every rate
+#   equally. There are 35 calls, so one call is 0.03.
