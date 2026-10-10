@@ -4,6 +4,7 @@ from training.discriminant_gate import (
     build_direction,
     cross_validate_direction,
     fold_id,
+    nested_cross_validate_direction,
     score,
     tp_bounds,
 )
@@ -92,3 +93,55 @@ def test_cross_validate_direction_with_external_recall_check_and_bounds():
     assert "real_kept_lo_pct" in cv.columns and "real_kept_hi_pct" in cv.columns
     assert (cv.real_kept_lo_pct <= cv.real_kept_hi_pct + 1e-9).all()  # bounds must not invert
     assert cv.real_kept_hi_pct.mean() > 70  # well-separated clusters: most achievable recall kept
+
+
+def test_nested_cv_picks_a_near_perfect_threshold_on_well_separated_clusters():
+    rng = np.random.default_rng(0)
+    real = rng.normal(loc=[5, 0], scale=0.3, size=(80, 2))
+    false = rng.normal(loc=[0, 5], scale=0.3, size=(80, 2))
+    cv = nested_cross_validate_direction(real, false, k_outer=5, k_inner=4, n_seeds=3)
+    assert len(cv) == 5 * 3  # one row per (seed, outer_fold), no per-threshold duplication
+    # the inner loop should reliably find a threshold that separates two obviously-separate clusters
+    assert cv.fp_removed_pct.mean() > 90
+    assert cv.real_kept_pct.mean() > 90
+
+
+def test_nested_cv_degrades_gracefully_on_overlapping_clusters():
+    rng = np.random.default_rng(0)
+    real = rng.normal(loc=[0, 0], scale=1.0, size=(80, 2))
+    false = rng.normal(loc=[0.2, 0.2], scale=1.0, size=(80, 2))  # heavily overlapping
+    cv = nested_cross_validate_direction(real, false, k_outer=5, k_inner=4, n_seeds=3)
+    # no threshold can do well on both axes when the clusters overlap this much
+    assert (cv.fp_removed_pct + cv.real_kept_pct).mean() < 160
+
+
+def test_nested_cv_with_external_bounds_and_stratified_groups():
+    rng = np.random.default_rng(0)
+    real = rng.normal(loc=[5, 0], scale=0.3, size=(80, 2))
+    # false positives drawn from two different "sites" with different offsets, so stratifying by
+    # site should keep every fold's mix representative instead of risking an all-one-site fold
+    false_site_a = rng.normal(loc=[0, 5], scale=0.3, size=(40, 2))
+    false_site_b = rng.normal(loc=[-1, 6], scale=0.3, size=(40, 2))
+    false = np.concatenate([false_site_a, false_site_b])
+    false_groups = np.array(["A"] * 40 + ["B"] * 40)
+
+    external = rng.normal(loc=[5, 0], scale=0.3, size=(30, 2))
+    ver_correct = np.full(30, 27)  # the sheet says 27 of 30 are correct, globally
+    ver_total = np.full(30, 30)
+
+    cv = nested_cross_validate_direction(
+        real, false, false_groups=false_groups, k_outer=5, k_inner=4, n_seeds=2,
+        external_vecs=external, external_ver_correct=ver_correct, external_ver_total=ver_total,
+    )
+    assert "real_kept_lo_pct" in cv.columns and "real_kept_hi_pct" in cv.columns
+    assert (cv.real_kept_lo_pct <= cv.real_kept_hi_pct + 1e-9).all()  # bounds must not invert
+    # "_of_achievable" is normalized to each fold's own test subset, not the sheet's global total
+    # (a single outer fold only ever sees 1/k_outer of the external set, so it can't approach 100%
+    # of the global count even when perfect -- see the function's docstring)
+    assert cv.real_kept_hi_pct_of_achievable.mean() > 70  # well-separated: most achievable kept
+    assert cv.fp_removed_pct.mean() > 70
+    # real_kept_hi_pct itself must never exceed 100: it is a fraction of the sheet's GLOBAL correct
+    # count, and summing it across folds (instead of recomputing tp_bounds once on the reassembled
+    # set) would double-count the bound's worst-case slack and could exceed 100 -- a real bug caught
+    # this way during development, now guarded against regressing
+    assert (cv.real_kept_hi_pct <= 100 + 1e-9).all()
