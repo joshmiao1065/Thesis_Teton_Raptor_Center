@@ -21,8 +21,8 @@ site, and can they be reduced without losing performance at other sites and on b
 |---|---|
 | `data_processing/` | audio loading and resampling, call-in-background mixtures, path configuration |
 | `models/` | model loading and batched preprocessing |
-| `evaluation/` | window scoring (ConvNeXT and BirdNET), feature extraction, event building, overview / band-limit / gallery notebooks |
-| `training/` | rescorer heads, training scripts, evaluation notebooks (cross-site, benchmark, gated) |
+| `evaluation/` | window scoring (ConvNeXT and BirdNET), event building, overview / band-limit / gallery notebooks, model-free acoustic diagnostics (band SNR, tonality, pulse regularity) |
+| `training/` | rescorer heads, training scripts, evaluation notebooks (cross-site, benchmark, gated); a zero-training discriminant-direction gate on frozen embeddings, with nested cross-validation for non-cherry-picked threshold selection |
 | `annotation/` | human-labelling tool: stratified sampling of what to label, a local web app (spectrogram, playback, hotkeys, reference and practice sets), label loading with inclusion weights |
 | `analysis/` | plotting helpers and a blind audit-sheet generator for human labelling |
 | `environments/` | pinned `requirements-*.txt` (main and BirdNET venvs) and `birdnet_gpu.sh` (CUDA library path for BirdNET on a GPU) |
