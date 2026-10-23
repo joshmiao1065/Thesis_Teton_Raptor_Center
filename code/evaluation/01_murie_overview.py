@@ -196,5 +196,5 @@ plt.show()
 #   class above 0.1, so the output on this site is mostly a noise-sink rather than a species call.
 # * The barred owl is the well-behaved class: high confidence on confirmed calls, nocturnal timing.
 # * Boreal (and goshawk) events cluster at dawn and dusk, are mostly low confidence, and often show
-#   no obvious call in the spectrogram. This is a visual impression, not a label: the audit sheet
-#   (`analysis/make_audit_sheet.py`) is the way to turn it into measurements.
+#   no obvious call in the spectrogram. This is a visual impression, not a label: expert labels
+#   (for example with the annotation tool in `annotation/`) are the way to turn it into measurements.
