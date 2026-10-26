@@ -91,6 +91,7 @@ pyarrow==25.0.1
 pycparser==3.0
 Pygments==2.21.0
 pymupdf==1.28.2
+pynndescent==0.6.0
 pyparsing==3.3.2
 pytest==9.1.1
 python-dateutil==2.9.0.post0
@@ -113,6 +114,7 @@ soupsieve==2.9.2
 soxr==1.0.0
 stack-data==0.6.3
 sympy==1.14.0
+tabulate==0.10.0
 threadpoolctl==3.7.0
 tinycss2==1.5.1
 tokenizers==0.22.2
@@ -127,6 +129,7 @@ transformers==4.57.6
 triton==3.6.0
 typing_extensions==4.16.0
 tzdata==2026.4
+umap-learn==0.5.12
 urllib3==2.8.0
 wcwidth==0.8.4
 webencodings==0.6.1
