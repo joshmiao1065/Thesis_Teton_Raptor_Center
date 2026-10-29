@@ -29,7 +29,7 @@ import pandas as pd
 from data_processing.paths import RESULTS
 
 plt.rcParams.update({"figure.dpi": 100, "axes.grid": True, "grid.alpha": 0.3})
-df = pd.read_csv(RESULTS / "bandlimit" / "clip_scores.csv")
+df = pd.read_csv(RESULTS / "baseline" / "data" / "clip_scores.csv")
 sp = df[df.species != "none"]
 print(len(sp), "synthetic clips with a target species;", (df.species == "none").sum() // 2, "noise-only clips")
 

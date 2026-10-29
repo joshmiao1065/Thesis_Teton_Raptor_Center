@@ -25,7 +25,7 @@ import pandas as pd
 from analysis.plots import event_gallery
 from data_processing.paths import RESULTS
 
-ev = pd.read_csv(RESULTS / "murie_overview" / "baseline_events.csv")
+ev = pd.read_csv(RESULTS / "baseline" / "data" / "baseline_events.csv")
 
 # %%
 event_gallery(ev[(ev.species == "norgos") & (ev.p_max >= 0.5)], title="Goshawk events, p >= 0.5")

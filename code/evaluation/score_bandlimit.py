@@ -1,6 +1,6 @@
 """Score the synthetic clips at full band and after a 32 -> 8 -> 32 kHz round trip (H4 test).
 
-Writes results/bandlimit/clip_scores.csv; the notebook 02_bandlimit_synthetic plots it.
+Writes results/baseline/data/clip_scores.csv; the notebook 02_bandlimit_synthetic plots it.
 """
 import re
 
@@ -13,7 +13,7 @@ from data_processing.paths import RESULTS
 from data_processing.paths import SYNTHETIC as SYN
 from models.convnext import TARGETS, Preprocessor, load_model, target_ids
 
-OUT = RESULTS / "bandlimit"; OUT.mkdir(parents=True, exist_ok=True)
+OUT = RESULTS / "baseline" / "data"; OUT.mkdir(parents=True, exist_ok=True)
 FOLDER2CODE = {"01-agos-american-northern-goshawk": "norgos", "02-ggow-great-gray-owl": "grgowl",
                "03-flow-flammulated-owl": "flaowl", "04-boow-boreal-owl": "borowl",
                "05-baow-bdow-barred-owl": "brdowl"}

@@ -36,7 +36,7 @@ from evaluation.events import TARGET_CODES, baseline_detections, load_scores, me
 from models.convnext import MODEL_ID
 
 plt.rcParams.update({"figure.dpi": 100, "axes.grid": True, "grid.alpha": 0.3})
-OUT = RESULTS / "murie_overview"
+OUT = RESULTS / "baseline" / "data"
 OUT.mkdir(parents=True, exist_ok=True)
 COLORS = dict(zip(TARGET_CODES, ["tab:purple", "tab:green", "tab:orange", "tab:red", "tab:blue"]))
 
