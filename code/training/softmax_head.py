@@ -1,3 +1,4 @@
+
 """Six-class softmax heads on ConvNeXT pooled embeddings: the five targets plus one "other" class.
 
 ConvNeXT-Base-BirdSet-XCL ends in one linear layer (pooled 1024-d embedding -> 9,736 logits) read
@@ -9,6 +10,13 @@ targets compete with an explicit "other" class trained on verified false positiv
   embedding mixup, and a warm start from the pretrained target rows with an L2-SP penalty that keeps the
   weights near them. With the "other" logit at 0, softmax([z, 0]) = sigmoid(z), so the warm-started head
   begins at the pretrained per-class probabilities.
+- `PooledHead` / `train_pooled_head`: the whole pretrained layer kept, read through the same six-way softmax as
+  `zero_shot_probs` (target logits; "other" = logsumexp of every non-target logit), then fine-tuned: only the
+  five target rows (`mode="rows"`, the non-target rows frozen) or the whole layer (`mode="full"`), with L2-SP
+  to the pretrained weights. Before training it equals `zero_shot_probs`. `objective="sigmoid"` trains the same
+  layer with the original per-class sigmoid loss instead (binary cross-entropy on the five target logits; "other"
+  = all five negative), the control for whether the softmax itself matters. `PooledHead.rest_max` gives the
+  largest non-target logit, so a fine-tuned layer can also be read through the original top-1 rule.
 """
 import numpy as np
 import torch
@@ -70,6 +78,88 @@ class Head:
         return e / e.sum(1, keepdims=True)
 
 
+class PooledHead(nn.Module):
+    """Pretrained layer (W, b) -> six logits: the targets' (in `target_idx` order), then logsumexp of the rest."""
+
+    def __init__(self, W, b, target_idx, mode="rows"):
+        super().__init__()
+        assert mode in ("rows", "full")
+        tid = np.asarray(target_idx)
+        rest = np.setdiff1d(np.arange(W.shape[0]), tid)
+        W, b = torch.as_tensor(W, dtype=torch.float32), torch.as_tensor(b, dtype=torch.float32)
+        self.mode = mode
+        self.register_buffer("tid", torch.as_tensor(tid))
+        self.register_buffer("rest", torch.as_tensor(rest))
+        if mode == "rows":
+            self.wt, self.bt = nn.Parameter(W[tid].clone()), nn.Parameter(b[tid].clone())
+            self.register_buffer("wr", W[rest].clone())
+            self.register_buffer("br", b[rest].clone())
+        else:
+            self.w, self.b = nn.Parameter(W.clone()), nn.Parameter(b.clone())
+
+    def forward(self, x):
+        if self.mode == "rows":
+            zt = x @ self.wt.T + self.bt
+            zo = torch.logsumexp(x @ self.wr.T + self.br, 1, keepdim=True)
+        else:
+            z = x @ self.w.T + self.b
+            zt, zo = z[:, self.tid], torch.logsumexp(z[:, self.rest], 1, keepdim=True)
+        return torch.cat([zt, zo], 1)
+
+    def rest_max(self, x):
+        """Largest non-target logit (n,): with the target logits it gives the original top-1 rule."""
+        if self.mode == "rows":
+            return (x @ self.wr.T + self.br).max(1).values
+        return (x @ self.w.T + self.b)[:, self.rest].max(1).values
+
+
+def _fit(net, Xt, yt, sample_weight, epochs, batch, lr, wd, label_smoothing, mixup, l2sp, rng, device,
+         objective="softmax"):
+    """Shared loop: weighted sampling with replacement, AdamW + cosine, optional mixup and L2-SP (squared distance
+    of every trainable weight from its value at the start). Loss: six-way cross-entropy (`objective="softmax"`) or
+    binary cross-entropy on the first five logits with one-hot targets ("sigmoid"; "other" = all negative)."""
+    params = [q for q in net.parameters() if q.requires_grad]
+    w0 = [q.detach().clone() for q in params]
+    p = np.ones(len(Xt)) if sample_weight is None else np.asarray(sample_weight, np.float64)
+    p = torch.as_tensor(p / p.sum(), dtype=torch.float32, device=device)
+    steps = epochs * max(1, len(Xt) // batch)
+    opt = torch.optim.AdamW(params, lr=lr, weight_decay=0.0 if l2sp else wd)
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, max(steps, 1))
+    ce = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
+    net.train()
+    for _ in range(steps):
+        i = torch.multinomial(p, batch, replacement=True)
+        x, t = Xt[i], nn.functional.one_hot(yt[i], N_CLASSES).float()
+        if mixup:
+            lam = float(rng.beta(mixup, mixup))
+            j = torch.randperm(batch, device=device)
+            x, t = lam * x + (1 - lam) * x[j], lam * t + (1 - lam) * t[j]
+        z = net(x)
+        loss = ce(z, t) if objective == "softmax" else \
+            nn.functional.binary_cross_entropy_with_logits(z[:, :OTHER], t[:, :OTHER])
+        if l2sp:
+            loss = loss + l2sp * sum(((a - a0) ** 2).sum() for a, a0 in zip(params, w0))
+        opt.zero_grad(); loss.backward(); opt.step(); sched.step()
+    return net
+
+
+def train_pooled_head(X, y, W, b, target_idx, mode="rows", sample_weight=None, epochs=15, batch=512, lr=3e-4,
+                      l2sp=1e-3, objective="softmax", seed=0, device="cpu"):
+    """Fine-tune the pretrained layer under the six-way pooled softmax (see `PooledHead`), or under the original
+    per-class sigmoid loss (`objective="sigmoid"`, target rows only); raw embeddings in."""
+    assert objective in ("softmax", "sigmoid")
+    assert objective == "softmax" or mode == "rows", "the sigmoid loss only reaches the target rows"
+    torch.manual_seed(seed)
+    X = np.asarray(X, np.float32)
+    Xt = torch.as_tensor(X, device=device)
+    yt = torch.as_tensor(np.asarray(y), dtype=torch.long, device=device)
+    net = PooledHead(W, b, target_idx, mode).to(device)
+    _fit(net, Xt, yt, sample_weight, epochs, batch, lr, 0.0, 0.0, 0.0, l2sp, np.random.default_rng(seed), device,
+         objective)
+    d = X.shape[1]
+    return Head(net.cpu(), torch.zeros(d), torch.ones(d))
+
+
 def train_head(X, y, sample_weight=None, hidden=0, epochs=60, batch=512, lr=1e-3, wd=1e-4, label_smoothing=0.0,
                mixup=0.0, init=None, l2sp=0.0, standardize=True, seed=0, threads=None, device="cpu"):
     """Fit a six-class softmax head.
@@ -96,23 +186,6 @@ def train_head(X, y, sample_weight=None, hidden=0, epochs=60, batch=512, lr=1e-3
             net.out.weight.zero_(); net.out.bias.zero_()
             net.out.weight[:OTHER] = torch.as_tensor(init[0], dtype=torch.float32)
             net.out.bias[:OTHER] = torch.as_tensor(init[1], dtype=torch.float32)
-    w0 = [p.detach().clone() for p in net.out.parameters()]
-    p = np.ones(len(X)) if sample_weight is None else np.asarray(sample_weight, np.float64)
-    p = torch.as_tensor(p / p.sum(), dtype=torch.float32, device=device)
-    steps = epochs * max(1, len(X) // batch)
-    opt = torch.optim.AdamW(net.parameters(), lr=lr, weight_decay=0.0 if l2sp else wd)
-    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, steps)
-    ce = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
-    net.train()
-    for _ in range(steps):
-        i = torch.multinomial(p, batch, replacement=True)
-        x, t = Xt[i], nn.functional.one_hot(yt[i], N_CLASSES).float()
-        if mixup:
-            lam = float(rng.beta(mixup, mixup))
-            j = torch.randperm(batch, device=device)
-            x, t = lam * x + (1 - lam) * x[j], lam * t + (1 - lam) * t[j]
-        loss = ce(net(x), t)
-        if l2sp:
-            loss = loss + l2sp * sum(((a - a0) ** 2).sum() for a, a0 in zip(net.out.parameters(), w0))
-        opt.zero_grad(); loss.backward(); opt.step(); sched.step()
+    assert not (l2sp and hidden), "L2-SP is defined for the linear head (all its weights are the output layer)"
+    _fit(net, Xt, yt, sample_weight, epochs, batch, lr, wd, label_smoothing, mixup, l2sp, rng, device)
     return Head(net.cpu(), mu, sd)
